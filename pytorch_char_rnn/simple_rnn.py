@@ -1,4 +1,5 @@
 import torch
+from torch.nn.modules.rnn import *
 from torch.nn._functions.rnn import *
 
 def ModRNNTanhCell(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
@@ -7,14 +8,6 @@ def ModRNNTanhCell(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
     """
     hy = F.tanh(F.linear(input, w_ih, b_ih) + F.linear(hidden, w_hh, b_hh))
     return hy
-
-class SimpleRNN(ModRNNBase):
-    """
-    vanilla RNN network
-    """
-    def __init__(self, *args, **kwargs):
-        mode = 'VANILLA_TANH'
-        super(SimpleRNN, self).__init__(mode, *args, **kwargs)
 
 class ModRNNBase(torch.nn.Module):
     """
@@ -51,6 +44,7 @@ class ModRNNBase(torch.nn.Module):
                 for name, param in zip(param_names, layer_params):
                     setattr(self, name, param)
                 self._all_weights.append(param_names)
+        self._data_ptrs = []
         self.reset_parameters()
 
     def _apply(self, fn):
@@ -172,3 +166,11 @@ def ModRNN(mode, input_size, hidden_size, num_layers=1, batch_first=False,
             output = output.transpose(0, 1)
         return output, nexth
     return forward
+
+class SimpleRNN(ModRNNBase):
+    """
+    vanilla RNN network
+    """
+    def __init__(self, *args, **kwargs):
+        mode = 'VANILLA_TANH'
+        super(SimpleRNN, self).__init__(mode, *args, **kwargs)
