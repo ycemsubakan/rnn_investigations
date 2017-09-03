@@ -1,13 +1,25 @@
 import torch
 from torch.nn.modules.rnn import *
 from torch.nn._functions.rnn import *
+import pdb
 
-def ModRNNTanhCell(input, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
-    """
-    vanilla RNN cell
-    """
-    hy = F.tanh(F.linear(input, w_ih, b_ih) + F.linear(hidden, w_hh, b_hh))
-    return hy
+# let's have different models as classes like this
+class ModRNNTanhCell():
+    def __init__(self, hidden_size):
+        self.K = hidden_size
+
+    def allocate_parameters(self, layer_input_size):
+        w_ih = Parameter(torch.Tensor(self.K, layer_input_size))
+        w_hh = Parameter(torch.Tensor(self.K, self.K))
+        b_ih = Parameter(torch.Tensor(self.K))
+        b_hh = Parameter(torch.Tensor(self.K))
+        return w_ih, w_hh, b_ih, b_hh
+
+    def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
+        hy = F.tanh(F.linear(inpt, w_ih, b_ih) + F.linear(hidden, w_hh, b_hh))
+        return hy
+
+
 
 class ModRNNBase(torch.nn.Module):
     """
@@ -17,6 +29,13 @@ class ModRNNBase(torch.nn.Module):
                  num_layers=1, bias=True, batch_first=False,
                  dropout=0, bidirectional=False):
         super(ModRNNBase, self).__init__()
+        
+        # pick the rnn cell to be used
+        if mode == 'VANILLA_TANH':
+            self.rnncell = ModRNNTanhCell(hidden_size) 
+        else:
+            raise ValueError('I dont know what model you are talking about')
+
         self.mode = mode
         self.input_size = input_size
         self.hidden_size = hidden_size
@@ -31,10 +50,7 @@ class ModRNNBase(torch.nn.Module):
         for layer in range(num_layers):
             for direction in range(num_directions):
                 layer_input_size = input_size if layer == 0 else hidden_size * num_directions
-                w_ih = Parameter(torch.Tensor(hidden_size, layer_input_size))
-                w_hh = Parameter(torch.Tensor(hidden_size, hidden_size))
-                b_ih = Parameter(torch.Tensor(hidden_size))
-                b_hh = Parameter(torch.Tensor(hidden_size))
+                w_ih, w_hh, b_ih, b_hh = self.rnncell.allocate_parameters(layer_input_size)
                 layer_params = (w_ih, w_hh, b_ih, b_hh)
                 suffix = '_reverse' if direction == 1 else ''
                 param_names = ['weight_ih_l{}{}', 'weight_hh_l{}{}']
@@ -78,7 +94,7 @@ class ModRNNBase(torch.nn.Module):
             flat_weight = first_data.new().set_(first_data.storage(), 0, torch.Size([self._param_buf_size]))
         else:
             flat_weight = None
-        func = ModRNN(
+        func = self.ModRNN(
             self.mode,
             self.input_size,
             self.hidden_size,
@@ -135,37 +151,39 @@ class ModRNNBase(torch.nn.Module):
     def all_weights(self):
         return [[getattr(self, weight) for weight in weights] for weights in self._all_weights]
 
-def ModRNN(mode, input_size, hidden_size, num_layers=1, batch_first=False,
-                dropout=0, train=True, bidirectional=False, batch_sizes=None,
-                dropout_state=None, flat_weight=None):
-    """
-    define forward computation over cells
-    """
-    if mode == 'VANILLA_TANH':
-        cell = ModRNNTanhCell
-    else:
-        raise Exception('Unknown mode: {}'.format(mode))
-    if batch_sizes is None:
-        rec_factory = Recurrent
-    else:
-        rec_factory = variable_recurrent_factory(batch_sizes)
-    if bidirectional:
-        layer = (rec_factory(cell), rec_factory(cell, reverse=True))
-    else:
-        layer = (rec_factory(cell),)
-    func = StackedRNN(layer,
-                      num_layers,
-                      (mode == 'LSTM'),
-                      dropout=dropout,
-                      train=train)
-    def forward(input, weight, hidden):
-        if batch_first and batch_sizes is None:
-            input = input.transpose(0, 1)
-        nexth, output = func(input, hidden, weight)
-        if batch_first and batch_sizes is None:
-            output = output.transpose(0, 1)
-        return output, nexth
-    return forward
+    def ModRNN(self, mode, input_size, hidden_size, num_layers=1, batch_first=False,
+                    dropout=0, train=True, bidirectional=False, batch_sizes=None,
+                    dropout_state=None, flat_weight=None):
+        """
+        define forward computation over cells
+        """
+        if mode == 'VANILLA_TANH':
+            cellhandle = ModRNNTanhCell(hidden_size)
+            cell = cellhandle.forward
+        else:
+            raise Exception('Unknown mode: {}'.format(mode))
+
+        if batch_sizes is None:
+            rec_factory = Recurrent
+        else:
+            rec_factory = variable_recurrent_factory(batch_sizes)
+        if bidirectional:
+            layer = (rec_factory(cell), rec_factory(cell, reverse=True))
+        else:
+            layer = (rec_factory(cell),)
+        func = StackedRNN(layer,
+                          num_layers,
+                          (mode == 'LSTM'),
+                          dropout=dropout,
+                          train=train)
+        def forward(input, weight, hidden):
+            if batch_first and batch_sizes is None:
+                input = input.transpose(0, 1)
+            nexth, output = func(input, hidden, weight)
+            if batch_first and batch_sizes is None:
+                output = output.transpose(0, 1)
+            return output, nexth
+        return forward
 
 class SimpleRNN(ModRNNBase):
     """

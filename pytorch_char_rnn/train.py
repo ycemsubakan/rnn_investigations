@@ -12,6 +12,7 @@ from tqdm import tqdm
 from helpers import *
 from model import *
 from generate import *
+import pdb
 
 # Parse command line arguments
 argparser = argparse.ArgumentParser()
