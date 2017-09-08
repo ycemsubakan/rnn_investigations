@@ -20,6 +20,22 @@ class ModRNNTanhCell():
         return hy
 
 
+class ModRNNTanhCellDiag():
+    def __init__(self, hidden_size):
+        self.K = hidden_size
+
+    def allocate_parameters(self, layer_input_size):
+        w_ih = Parameter(torch.Tensor(self.K, layer_input_size))
+        w_hh = Parameter(torch.Tensor(self.K))
+        b_ih = Parameter(torch.Tensor(self.K))
+        b_hh = Parameter(torch.Tensor(self.K))
+        return w_ih, w_hh, b_ih, b_hh
+
+    def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
+        hy = F.tanh(F.linear(inpt, w_ih, b_ih) + hidden * w_hh + b_hh)
+        return hy
+
+
 
 class ModRNNBase(torch.nn.Module):
     """
@@ -33,8 +49,10 @@ class ModRNNBase(torch.nn.Module):
         # pick the rnn cell to be used
         if mode == 'VANILLA_TANH':
             self.rnncell = ModRNNTanhCell(hidden_size) 
+        elif mode == 'VANILLA_TANH_DIAG':
+            self.rnncell = ModRNNTanhCellDiag(hidden_size)
         else:
-            raise ValueError('I dont know what model you are talking about')
+            raise ValueError('Unknown cell type: {}'.format(mode))
 
         self.mode = mode
         self.input_size = input_size
@@ -94,7 +112,7 @@ class ModRNNBase(torch.nn.Module):
             flat_weight = first_data.new().set_(first_data.storage(), 0, torch.Size([self._param_buf_size]))
         else:
             flat_weight = None
-        func = self.ModRNN(
+        func = self.fw(
             self.mode,
             self.input_size,
             self.hidden_size,
@@ -151,7 +169,7 @@ class ModRNNBase(torch.nn.Module):
     def all_weights(self):
         return [[getattr(self, weight) for weight in weights] for weights in self._all_weights]
 
-    def ModRNN(self, mode, input_size, hidden_size, num_layers=1, batch_first=False,
+    def fw(self, mode, input_size, hidden_size, num_layers=1, batch_first=False,
                     dropout=0, train=True, bidirectional=False, batch_sizes=None,
                     dropout_state=None, flat_weight=None):
         """
@@ -160,8 +178,11 @@ class ModRNNBase(torch.nn.Module):
         if mode == 'VANILLA_TANH':
             cellhandle = ModRNNTanhCell(hidden_size)
             cell = cellhandle.forward
+        elif mode == 'VANILLA_TANH_DIAG':
+            cellhandle = ModRNNTanhCellDiag(hidden_size)
+            cell = cellhandle.forward
         else:
-            raise Exception('Unknown mode: {}'.format(mode))
+            raise ValueError('Unknown cell type: {}'.format(mode))
 
         if batch_sizes is None:
             rec_factory = Recurrent
@@ -187,8 +208,16 @@ class ModRNNBase(torch.nn.Module):
 
 class SimpleRNN(ModRNNBase):
     """
-    vanilla RNN network
+    vanilla RNN network - full w_hh
     """
     def __init__(self, *args, **kwargs):
         mode = 'VANILLA_TANH'
         super(SimpleRNN, self).__init__(mode, *args, **kwargs)
+
+class SimpleRNNDiag(ModRNNBase):
+    """
+    vanilla RNN network - diagonal w_hh
+    """
+    def __init__(self, *args, **kwargs):
+        mode = 'VANILLA_TANH_DIAG'
+        super(SimpleRNNDiag, self).__init__(mode, *args, **kwargs)
