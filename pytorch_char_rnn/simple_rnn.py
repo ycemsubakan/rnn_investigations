@@ -210,14 +210,9 @@ class SimpleRNN(ModRNNBase):
     """
     vanilla RNN network - full w_hh
     """
-    def __init__(self, *args, **kwargs):
-        mode = 'VANILLA_TANH'
+    def __init__(self, wform='full', *args, **kwargs):
+        if wform == 'full':
+            mode = 'VANILLA_TANH'
+        elif wform == 'diag':
+            mode = 'VANILLA_TANH_DIAG'
         super(SimpleRNN, self).__init__(mode, *args, **kwargs)
-
-class SimpleRNNDiag(ModRNNBase):
-    """
-    vanilla RNN network - diagonal w_hh
-    """
-    def __init__(self, *args, **kwargs):
-        mode = 'VANILLA_TANH_DIAG'
-        super(SimpleRNNDiag, self).__init__(mode, *args, **kwargs)
