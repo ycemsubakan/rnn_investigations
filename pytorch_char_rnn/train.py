@@ -138,7 +138,7 @@ try:
 
     print("Saving...")
     save()
-    np.save('test_CE', np.array(test_loss))
+    np.save('result', np.array(test_loss))
 
 except KeyboardInterrupt:
     print("Saving before quit...")
