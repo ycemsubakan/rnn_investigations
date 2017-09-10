@@ -175,15 +175,7 @@ class ModRNNBase(torch.nn.Module):
         """
         define forward computation over cells
         """
-        if mode == 'VANILLA_TANH':
-            cellhandle = ModRNNTanhCell(hidden_size)
-            cell = cellhandle.forward
-        elif mode == 'VANILLA_TANH_DIAG':
-            cellhandle = ModRNNTanhCellDiag(hidden_size)
-            cell = cellhandle.forward
-        else:
-            raise ValueError('Unknown cell type: {}'.format(mode))
-
+        cell = self.rnncell.forward
         if batch_sizes is None:
             rec_factory = Recurrent
         else:
@@ -208,7 +200,7 @@ class ModRNNBase(torch.nn.Module):
 
 class SimpleRNN(ModRNNBase):
     """
-    vanilla RNN network - full w_hh
+    vanilla RNN network
     """
     def __init__(self, wform='full', *args, **kwargs):
         if wform == 'full':
