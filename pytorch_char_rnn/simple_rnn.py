@@ -3,7 +3,6 @@ from torch.nn.modules.rnn import *
 from torch.nn._functions.rnn import *
 import pdb
 
-# let's have different models as classes like this
 class ModRNNTanhCell():
     def __init__(self, hidden_size):
         self.K = hidden_size
@@ -47,9 +46,9 @@ class ModRNNBase(torch.nn.Module):
         super(ModRNNBase, self).__init__()
         
         # pick the rnn cell to be used
-        if mode == 'VANILLA_TANH':
+        if mode == 'vanilla_tanh':
             self.rnncell = ModRNNTanhCell(hidden_size) 
-        elif mode == 'VANILLA_TANH_DIAG':
+        elif mode == 'vanilla_tanh_diag':
             self.rnncell = ModRNNTanhCellDiag(hidden_size)
         else:
             raise ValueError('Unknown cell type: {}'.format(mode))
@@ -197,14 +196,3 @@ class ModRNNBase(torch.nn.Module):
                 output = output.transpose(0, 1)
             return output, nexth
         return forward
-
-class SimpleRNN(ModRNNBase):
-    """
-    vanilla RNN network
-    """
-    def __init__(self, wform='full', *args, **kwargs):
-        if wform == 'full':
-            mode = 'VANILLA_TANH'
-        elif wform == 'diag':
-            mode = 'VANILLA_TANH_DIAG'
-        super(SimpleRNN, self).__init__(mode, *args, **kwargs)

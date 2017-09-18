@@ -6,7 +6,7 @@ from torch.autograd import Variable
 from simple_rnn import *
 
 class CharRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, model="gru", n_layers=1):
+    def __init__(self, input_size, hidden_size, output_size, model, n_layers):
         super(CharRNN, self).__init__()
         self.model = model.lower()
         self.input_size = input_size
@@ -14,7 +14,7 @@ class CharRNN(nn.Module):
         self.output_size = output_size
         self.n_layers = n_layers
         self.encoder = nn.Embedding(input_size, hidden_size)
-        self.rnn = SimpleRNN('full', hidden_size, hidden_size, n_layers)
+        self.rnn = ModRNNBase(self.model, hidden_size, hidden_size, n_layers)
         self.decoder = nn.Linear(hidden_size, output_size)
 
     def forward(self, input, hidden):
