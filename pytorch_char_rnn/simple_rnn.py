@@ -15,7 +15,7 @@ class ModRNNTanhCell():
         return w_ih, w_hh, b_ih, b_hh
 
     def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
-        hy = F.tanh(F.linear(inpt, w_ih, b_ih) + F.linear(hidden, w_hh, b_hh))
+        hy = F.tanh(F.linear(inpt, w_ih) + F.linear(hidden, w_hh) + b_hh) 
         return hy
 
 
@@ -31,10 +31,56 @@ class ModRNNTanhCellDiag():
         return w_ih, w_hh, b_ih, b_hh
 
     def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
-        hy = F.tanh(F.linear(inpt, w_ih, b_ih) + hidden * w_hh + b_hh)
+        hy = F.tanh(F.linear(inpt, w_ih) + hidden * w_hh + b_hh)
         return hy
 
+class ModLSTMCell():
+    def __init__(self, hidden_size):
+        self.K = hidden_size
 
+    def allocate_parameters(self, layer_input_size):
+        w_ih = Parameter(torch.Tensor(4 * self.K, layer_input_size))
+        w_hh = Parameter(torch.Tensor(4 * self.K, self.K))
+        b_ih = Parameter(torch.Tensor(4 * self.K))
+        b_hh = Parameter(torch.Tensor(4 * self.K))
+        return w_ih, w_hh, b_ih, b_hh
+
+    def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
+        h_prev, h_prev_prime = hidden
+        Wf, Ww, Wo, W = w_hh.chunk(4)
+        Uf, Uw, Uo, U = w_ih.chunk(4)
+        bf, bw, bo, b = b_hh.chunk(4)
+        f_t = F.sigmoid(F.linear(h_prev, Wf) + F.linear(inpt,Uf, bf))
+        w_t = F.sigmoid(F.linear(h_prev, Ww) + F.linear(inpt, Uw, bw))
+        o_t = F.sigmoid(F.linear(h_prev, Wo) + F.linear(inpt, Uo, bo))
+        c_t = F.tanh(F.linear(h_prev, W) + F.linear(inpt, U, b) + b)
+        h_next_prime = h_prev_prime * f_t + w_t * c_t
+        h_next = o_t * F.tanh(h_next_prime)
+        return h_next, h_next_prime
+
+class ModLSTMCellDiag():
+    def __init__(self, hidden_size):
+        self.K = hidden_size
+
+    def allocate_parameters(self, layer_input_size):
+        w_ih = Parameter(torch.Tensor(4 * self.K, layer_input_size))
+        w_hh = Parameter(torch.Tensor(4 * self.K))
+        b_ih = Parameter(torch.Tensor(4 * self.K))
+        b_hh = Parameter(torch.Tensor(4 * self.K))
+        return w_ih, w_hh, b_ih, b_hh
+
+    def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
+        h_prev, h_prev_prime = hidden
+        Wf, Ww, Wo, W = w_hh.chunk(4)
+        Uf, Uw, Uo, U = w_ih.chunk(4)
+        bf, bw, bo, b = b_hh.chunk(4)
+        f_t = F.sigmoid(h_prev * Wf + F.linear(inpt,Uf, bf))
+        w_t = F.sigmoid(h_prev * Ww + F.linear(inpt, Uw, bw))
+        o_t = F.sigmoid(h_prev * Wo + F.linear(inpt, Uo, bo))
+        c_t = F.tanh(h_prev * W + F.linear(inpt, U, b) + b)
+        h_next_prime = h_prev_prime * f_t + w_t * c_t
+        h_next = o_t * F.tanh(h_next_prime)
+        return h_next, h_next_prime
 
 class ModRNNBase(torch.nn.Module):
     """
@@ -42,7 +88,7 @@ class ModRNNBase(torch.nn.Module):
     """
     def __init__(self, mode, input_size, hidden_size,
                  num_layers=1, bias=True, batch_first=False,
-                 dropout=0, bidirectional=False):
+                 dropout=.1, bidirectional=False):
         super(ModRNNBase, self).__init__()
         
         # pick the rnn cell to be used
@@ -50,6 +96,10 @@ class ModRNNBase(torch.nn.Module):
             self.rnncell = ModRNNTanhCell(hidden_size) 
         elif mode == 'vanilla_tanh_diag':
             self.rnncell = ModRNNTanhCellDiag(hidden_size)
+        elif mode == 'lstm':
+            self.rnncell = ModLSTMCell(hidden_size)
+        elif mode == 'lstm_diag':
+            self.rnncell = ModLSTMCellDiag(hidden_size)
         else:
             raise ValueError('Unknown cell type: {}'.format(mode))
 
@@ -185,7 +235,7 @@ class ModRNNBase(torch.nn.Module):
             layer = (rec_factory(cell),)
         func = StackedRNN(layer,
                           num_layers,
-                          (mode == 'LSTM'),
+                          ('lstm' in mode),
                           dropout=dropout,
                           train=train)
         def forward(input, weight, hidden):
