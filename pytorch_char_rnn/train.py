@@ -19,7 +19,7 @@ from matplotlib import pyplot as plt
 argparser = argparse.ArgumentParser()
 argparser.add_argument('filename', type=str)
 argparser.add_argument('--model', type=str, default='vanilla_tanh')
-argparser.add_argument('--n_epochs', type=int, default=100)
+argparser.add_argument('--n_epochs', type=int, default=300)
 argparser.add_argument('--print_every', type=int, default=1)
 argparser.add_argument('--K_min', type=int, default=50)
 argparser.add_argument('--K_max', type=int, default=300)
