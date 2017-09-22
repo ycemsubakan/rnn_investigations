@@ -53,7 +53,7 @@ class ModLSTMCell():
         f_t = F.sigmoid(F.linear(h_prev, Wf) + F.linear(inpt,Uf, bf))
         w_t = F.sigmoid(F.linear(h_prev, Ww) + F.linear(inpt, Uw, bw))
         o_t = F.sigmoid(F.linear(h_prev, Wo) + F.linear(inpt, Uo, bo))
-        c_t = F.tanh(F.linear(h_prev, W) + F.linear(inpt, U, b) + b)
+        c_t = F.tanh(F.linear(h_prev, W) + F.linear(inpt, U, b))
         h_next_prime = h_prev_prime * f_t + w_t * c_t
         h_next = o_t * F.tanh(h_next_prime)
         return h_next, h_next_prime
@@ -77,7 +77,7 @@ class ModLSTMCellDiag():
         f_t = F.sigmoid(h_prev * Wf + F.linear(inpt,Uf, bf))
         w_t = F.sigmoid(h_prev * Ww + F.linear(inpt, Uw, bw))
         o_t = F.sigmoid(h_prev * Wo + F.linear(inpt, Uo, bo))
-        c_t = F.tanh(h_prev * W + F.linear(inpt, U, b) + b)
+        c_t = F.tanh(h_prev * W + F.linear(inpt, U, b))
         h_next_prime = h_prev_prime * f_t + w_t * c_t
         h_next = o_t * F.tanh(h_next_prime)
         return h_next, h_next_prime
