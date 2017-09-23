@@ -13,7 +13,6 @@ from model import *
 from generate import *
 import pdb
 import numpy as np
-from matplotlib import pyplot as plt
 
 # Parse command line arguments
 argparser = argparse.ArgumentParser()
@@ -83,6 +82,8 @@ def train(inp, target):
 
 def test(inp, target):
     hidden = decoder.init_hidden(args.batch_size)
+    if args.cuda:
+        hidden = hidden.cuda()
     loss = 0
     for c in range(args.chunk_len):
         output, hidden = decoder(inp[:,c], hidden)
