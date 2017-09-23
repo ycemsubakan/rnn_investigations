@@ -13,7 +13,7 @@ class ModRNNTanhCell():
         w_hh = Parameter(torch.Tensor(self.K, self.K))
         b_ih = Parameter(torch.Tensor(self.K))
         b_hh = Parameter(torch.Tensor(self.K))
-        return w_ih, w_hh, b_ih, b_hh
+        return w_ih.cuda(), w_hh.cuda(), b_ih.cuda(), b_hh.cuda()
 
     def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
         hy = F.tanh(F.linear(inpt, w_ih) + F.linear(hidden, w_hh) + b_hh) 
