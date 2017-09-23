@@ -152,7 +152,6 @@ for configuration in range(args.num_configs):
             if epoch % args.print_every == 0:
                 #print('[%s (%d %d%%)]' % (time_since(start), epoch, epoch / args.n_epochs * 100))
                 print('Test loss:', test_loss[-1])
-                #print(generate(decoder, 'Wh', 100, cuda=args.cuda), '\n')
 
         print("Saving...")
         save()
@@ -169,7 +168,9 @@ for configuration in range(args.num_configs):
         result_dict['train_loss'] = train_loss
         result_dict['test_loss'] = test_loss
         result_dict['final_test_loss'] = test_loss[-1]
+        result_dict['example_gen_text'] = generate(decoder, 'Wh', 200, cuda=args.cuda)
         result_dict['elapsed_time'] = time_since(start)
+        print(result_dict['example_gen_text'])
         pickle.dump(result_dict, open(str(time.time()) + '.pk', 'wb'))
 
     except KeyboardInterrupt:
