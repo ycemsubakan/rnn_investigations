@@ -128,13 +128,13 @@ class ModRNNBase(torch.nn.Module):
                 for name, param in zip(param_names, layer_params):
                     setattr(self, name, param)
                 self._all_weights.append(param_names)
-        #self.flatten_parameters()
+        self._data_ptrs = []
         self.reset_parameters()
 
 
     def _apply(self, fn):
         ret = super(ModRNNBase, self)._apply(fn)
-        #self.flatten_parameters()
+        self.flatten_parameters()
         return ret
 
     def reset_parameters(self):
