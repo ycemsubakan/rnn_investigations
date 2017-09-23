@@ -134,7 +134,7 @@ class ModRNNBase(torch.nn.Module):
 
     def _apply(self, fn):
         ret = super(ModRNNBase, self)._apply(fn)
-        self.flatten_parameters()
+        #self.flatten_parameters()
         return ret
 
     def reset_parameters(self):
