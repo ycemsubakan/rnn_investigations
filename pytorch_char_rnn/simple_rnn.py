@@ -152,9 +152,13 @@ class ModRNNBase(torch.nn.Module):
             from torch.backends import cudnn
             from torch.nn._functions.rnn import CudnnRNN
             handle = cudnn.get_handle()
+            modes_mapping = {'vanilla_tanh':'RNN_TANH',
+                            'vanilla_tanh_diag':'RNN_TANH',
+                            'lstm':'LSTM',
+                            'lstm_diag':'LSTM'}
             with warnings.catch_warnings(record=True):
                 fn = CudnnRNN(
-                    self.mode,
+                    modes_mapping[self.mode],
                     self.input_size,
                     self.hidden_size,
                     num_layers=self.num_layers,
