@@ -2,14 +2,15 @@ import math
 import torch
 from torch.nn.modules.rnn import *
 from torch.nn._functions.rnn import *
+from torch.nn._functions.thnn import rnnFusedPointwise as fusedBackend
 import pdb
 
 class ModRNNTanhCell():
     def __init__(self, hidden_size):
         self.K = hidden_size
 
-    def allocate_parameters(self, layer_input_size):
-        w_ih = Parameter(torch.Tensor(self.K, layer_input_size))
+    def allocate_parameters(self, layer_inpt_size):
+        w_ih = Parameter(torch.Tensor(self.K, layer_inpt_size))
         w_hh = Parameter(torch.Tensor(self.K, self.K))
         b_ih = Parameter(torch.Tensor(self.K))
         b_hh = Parameter(torch.Tensor(self.K))
@@ -24,8 +25,8 @@ class ModRNNTanhCellDiag():
     def __init__(self, hidden_size):
         self.K = hidden_size
 
-    def allocate_parameters(self, layer_input_size):
-        w_ih = Parameter(torch.Tensor(self.K, layer_input_size))
+    def allocate_parameters(self, layer_inpt_size):
+        w_ih = Parameter(torch.Tensor(self.K, layer_inpt_size))
         w_hh = Parameter(torch.Tensor(self.K))
         b_ih = Parameter(torch.Tensor(self.K))
         b_hh = Parameter(torch.Tensor(self.K))
@@ -39,55 +40,73 @@ class ModLSTMCell():
     def __init__(self, hidden_size):
         self.K = hidden_size
 
-    def allocate_parameters(self, layer_input_size):
-        w_ih = Parameter(torch.Tensor(4 * self.K, layer_input_size))
+    def allocate_parameters(self, layer_inpt_size):
+        w_ih = Parameter(torch.Tensor(4 * self.K, layer_inpt_size))
         w_hh = Parameter(torch.Tensor(4 * self.K, self.K))
         b_ih = Parameter(torch.Tensor(4 * self.K))
         b_hh = Parameter(torch.Tensor(4 * self.K))
         return w_ih, w_hh, b_ih, b_hh
 
     def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
-        h_prev, h_prev_prime = hidden
-        Wf, Ww, Wo, W = w_hh.chunk(4)
-        Uf, Uw, Uo, U = w_ih.chunk(4)
-        bf, bw, bo, b = b_hh.chunk(4)
-        f_t = F.sigmoid(F.linear(h_prev, Wf) + F.linear(inpt,Uf, bf))
-        w_t = F.sigmoid(F.linear(h_prev, Ww) + F.linear(inpt, Uw, bw))
-        o_t = F.sigmoid(F.linear(h_prev, Wo) + F.linear(inpt, Uo, bo))
-        c_t = F.tanh(F.linear(h_prev, W) + F.linear(inpt, U, b))
-        h_next_prime = h_prev_prime * f_t + w_t * c_t
-        h_next = o_t * F.tanh(h_next_prime)
-        return h_next, h_next_prime
+        if inpt.is_cuda:
+            igates = F.linear(inpt, w_ih)
+            hgates = F.linear(hidden[0], w_hh)
+            state = fusedBackend.LSTMFused()
+            return state(igates, hgates, hidden[1]) if b_ih is None else state(igates, hgates, hidden[1], b_ih, b_hh)
+
+        hx, cx = hidden
+        gates = F.linear(inpt, w_ih, b_ih) + F.linear(hx, w_hh, b_hh)
+
+        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+        ingate = F.sigmoid(ingate)
+        forgetgate = F.sigmoid(forgetgate)
+        cellgate = F.tanh(cellgate)
+        outgate = F.sigmoid(outgate)
+
+        cy = (forgetgate * cx) + (ingate * cellgate)
+        hy = outgate * F.tanh(cy)
+
+        return hy, cy
 
 class ModLSTMCellDiag():
     def __init__(self, hidden_size):
         self.K = hidden_size
 
-    def allocate_parameters(self, layer_input_size):
-        w_ih = Parameter(torch.Tensor(4 * self.K, layer_input_size))
+    def allocate_parameters(self, layer_inpt_size):
+        w_ih = Parameter(torch.Tensor(4 * self.K, layer_inpt_size))
         w_hh = Parameter(torch.Tensor(4 * self.K))
         b_ih = Parameter(torch.Tensor(4 * self.K))
         b_hh = Parameter(torch.Tensor(4 * self.K))
         return w_ih, w_hh, b_ih, b_hh
 
     def forward(self, inpt, hidden, w_ih, w_hh, b_ih=None, b_hh=None):
-        h_prev, h_prev_prime = hidden
-        Wf, Ww, Wo, W = w_hh.chunk(4)
-        Uf, Uw, Uo, U = w_ih.chunk(4)
-        bf, bw, bo, b = b_hh.chunk(4)
-        f_t = F.sigmoid(h_prev * Wf + F.linear(inpt,Uf, bf))
-        w_t = F.sigmoid(h_prev * Ww + F.linear(inpt, Uw, bw))
-        o_t = F.sigmoid(h_prev * Wo + F.linear(inpt, Uo, bo))
-        c_t = F.tanh(h_prev * W + F.linear(inpt, U, b))
-        h_next_prime = h_prev_prime * f_t + w_t * c_t
-        h_next = o_t * F.tanh(h_next_prime)
-        return h_next, h_next_prime
+        if inpt.is_cuda:
+            igates = F.linear(inpt, w_ih)
+            hgates = hidden[0] * w_hh
+            state = fusedBackend.LSTMFused()
+            return state(igates, hgates, hidden[1]) if b_ih is None else state(igates, hgates, hidden[1], b_ih, b_hh)
+
+        hx, cx = hidden
+        gates = F.linear(inpt, w_ih) + hx * w_hh + b_hh
+
+        ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
+
+        ingate = F.sigmoid(ingate)
+        forgetgate = F.sigmoid(forgetgate)
+        cellgate = F.tanh(cellgate)
+        outgate = F.sigmoid(outgate)
+
+        cy = (forgetgate * cx) + (ingate * cellgate)
+        hy = outgate * F.tanh(cy)
+
+        return hy, cy
 
 class ModRNNBase(torch.nn.Module):
     """
     base RNN class
     """
-    def __init__(self, mode, input_size, hidden_size,
+    def __init__(self, mode, inpt_size, hidden_size,
                  num_layers=1, bias=True, batch_first=False,
                  dropout=.1, bidirectional=False):
         super(ModRNNBase, self).__init__()
@@ -105,7 +124,7 @@ class ModRNNBase(torch.nn.Module):
             raise ValueError('Unknown cell type: {}'.format(mode))
 
         self.mode = mode
-        self.input_size = input_size
+        self.inpt_size = inpt_size
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.bias = bias
@@ -117,8 +136,8 @@ class ModRNNBase(torch.nn.Module):
         self._all_weights = []
         for layer in range(num_layers):
             for direction in range(num_directions):
-                layer_input_size = input_size if layer == 0 else hidden_size * num_directions
-                w_ih, w_hh, b_ih, b_hh = self.rnncell.allocate_parameters(layer_input_size)
+                layer_inpt_size = inpt_size if layer == 0 else hidden_size * num_directions
+                w_ih, w_hh, b_ih, b_hh = self.rnncell.allocate_parameters(layer_inpt_size)
                 layer_params = (w_ih, w_hh, b_ih, b_hh)
                 suffix = '_reverse' if direction == 1 else ''
                 param_names = ['weight_ih_l{}{}', 'weight_hh_l{}{}']
@@ -142,17 +161,17 @@ class ModRNNBase(torch.nn.Module):
         for weight in self.parameters():
             weight.data.uniform_(-stdv, stdv)
 
-    def forward(self, input, hx=None):
-        is_packed = isinstance(input, PackedSequence)
+    def forward(self, inpt, hx=None):
+        is_packed = isinstance(inpt, PackedSequence)
         if is_packed:
-            input, batch_sizes = input
+            inpt, batch_sizes = inpt
             max_batch_size = batch_sizes[0]
         else:
             batch_sizes = None
-            max_batch_size = input.size(0) if self.batch_first else input.size(1)
+            max_batch_size = inpt.size(0) if self.batch_first else inpt.size(1)
         if hx is None:
             num_directions = 2 if self.bidirectional else 1
-            hx = torch.autograd.Variable(input.data.new(self.num_layers *
+            hx = torch.autograd.Variable(inpt.data.new(self.num_layers *
                                                         num_directions,
                                                         max_batch_size,
                                                         self.hidden_size).zero_(), requires_grad=False)
@@ -165,7 +184,7 @@ class ModRNNBase(torch.nn.Module):
             flat_weight = None
         func = self.fw(
             self.mode,
-            self.input_size,
+            self.inpt_size,
             self.hidden_size,
             num_layers=self.num_layers,
             batch_first=self.batch_first,
@@ -176,13 +195,13 @@ class ModRNNBase(torch.nn.Module):
             dropout_state=self.dropout_state,
             flat_weight=flat_weight
         )
-        output, hidden = func(input, self.all_weights, hx)
+        output, hidden = func(inpt, self.all_weights, hx)
         if is_packed:
             output = PackedSequence(output, batch_sizes)
         return output, hidden
 
     def __repr__(self):
-        s = '{name}({input_size}, {hidden_size}'
+        s = '{name}({inpt_size}, {hidden_size}'
         if self.num_layers != 1:
             s += ', num_layers={num_layers}'
         if self.bias is not True:
@@ -220,7 +239,7 @@ class ModRNNBase(torch.nn.Module):
     def all_weights(self):
         return [[getattr(self, weight) for weight in weights] for weights in self._all_weights]
 
-    def fw(self, mode, input_size, hidden_size, num_layers=1, batch_first=False,
+    def fw(self, mode, inpt_size, hidden_size, num_layers=1, batch_first=False,
                     dropout=0, train=True, bidirectional=False, batch_sizes=None,
                     dropout_state=None, flat_weight=None):
         """
@@ -240,10 +259,10 @@ class ModRNNBase(torch.nn.Module):
                           ('lstm' in mode),
                           dropout=dropout,
                           train=train)
-        def forward(input, weight, hidden):
+        def forward(inpt, weight, hidden):
             if batch_first and batch_sizes is None:
-                input = input.transpose(0, 1)
-            nexth, output = func(input, hidden, weight)
+                inpt = inpt.transpose(0, 1)
+            nexth, output = func(inpt, hidden, weight)
             if batch_first and batch_sizes is None:
                 output = output.transpose(0, 1)
             return output, nexth
