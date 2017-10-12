@@ -98,8 +98,12 @@ def train(inp, target):
     batch_size = inp.size(0)
 
     hidden = decoder.init_hidden(batch_size)
-    if arguments.cuda:
-        hidden = hidden.cuda()
+    try:
+        if arguments.cuda:
+            hidden = hidden.cuda()
+    except:
+        hidden = (hdn.cuda() for hdn in hidden)
+        
     decoder.zero_grad()
     loss = 0
     for c in range(arguments.chunk_len):
@@ -113,8 +117,12 @@ def test(inp, target):
     batch_size = inp.size(0)
 
     hidden = decoder.init_hidden(batch_size)
-    if arguments.cuda:
-        hidden = hidden.cuda()
+    try:
+        if arguments.cuda:
+            hidden = hidden.cuda()
+    except:
+        hidden = (hdn.cuda() for hdn in hidden)
+
     loss = 0
     for c in range(arguments.chunk_len):
         output, hidden = decoder(inp[:,c], hidden)
