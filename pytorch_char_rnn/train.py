@@ -13,6 +13,7 @@ from model import *
 from generate import *
 import pdb
 import numpy as np
+import torch.utils.data as data_utils
 
 # Parse command line arguments
 argparser = argparse.ArgumentParser()
@@ -69,27 +70,55 @@ def random_batch(file, chunk_len, batch_size):
         target = target.cuda()
     return inp, target
 
+def get_loader(fl, chunk_len, batch_size):
+    
+    inputs = fl[:-1]
+    targets = fl[1:]
+
+    N = len(inputs)
+
+    N = N - N % chunk_len
+    inputs, targets = inputs[:N], targets[:N]
+   
+    all_inputs = [char_tensor(inputs[i:i+chunk_len]).view(1,-1) for i in range(0, N, chunk_len)]
+    all_targets = [char_tensor(targets[i:i+chunk_len]).view(1,-1) for i in range(0, N, chunk_len)]
+
+    all_inputs = torch.cat(all_inputs, 0)
+    all_targets = torch.cat(all_targets, 0)
+
+    dataset = data_utils.TensorDataset(data_tensor=all_inputs,
+                                       target_tensor=all_targets)
+
+    kwargs = {'num_workers': 1, 'pin_memory': True} if arguments.cuda else {}
+    loader = data_utils.DataLoader(dataset, batch_size=batch_size, shuffle=True, **kwargs)
+    return loader
+
+
 def train(inp, target):
-    hidden = decoder.init_hidden(arguments.batch_size)
+    batch_size = inp.size(0)
+
+    hidden = decoder.init_hidden(batch_size)
     if arguments.cuda:
         hidden = hidden.cuda()
     decoder.zero_grad()
     loss = 0
     for c in range(arguments.chunk_len):
         output, hidden = decoder(inp[:,c], hidden)
-        loss += criterion(output.view(arguments.batch_size, -1), target[:,c])
+        loss += criterion(output.view(batch_size, -1), target[:,c])
     loss.backward()
     decoder_optimizer.step()
     return loss.data[0] / arguments.chunk_len
 
 def test(inp, target):
-    hidden = decoder.init_hidden(arguments.batch_size)
+    batch_size = inp.size(0)
+
+    hidden = decoder.init_hidden(batch_size)
     if arguments.cuda:
         hidden = hidden.cuda()
     loss = 0
     for c in range(arguments.chunk_len):
         output, hidden = decoder(inp[:,c], hidden)
-        loss += criterion(output.view(arguments.batch_size, -1), target[:,c])
+        loss += criterion(output.view(batch_size, -1), target[:,c])
     return loss.data[0] / arguments.chunk_len
 
 def save():
@@ -110,13 +139,19 @@ train_file = pickle.load(open('train_set.pk','rb'))
 vld_file = pickle.load(open('vld_set.pk','rb'))
 test_file = pickle.load(open('test_set.pk','rb'))
 
+# get the loaders 
+
+train_loader = get_loader(train_file, arguments.chunk_len, arguments.batch_size)
+vld_loader = get_loader(vld_file, arguments.chunk_len, arguments.batch_size)
+test_loader = get_loader(test_file, arguments.chunk_len, arguments.batch_size)
+
 
 if arguments.cuda:
     print("Using CUDA")
-pdb.set_trace()
 
 for configuration in range(arguments.num_configs):
     
+    # we should take this outside of the loop 
     learning_rate, hidden_size, num_layers = generate_random_hyperparams(arguments.lr_min, 
                                                                          arguments.lr_max, 
                                                                          arguments.K_min, 
@@ -148,10 +183,27 @@ for configuration in range(arguments.num_configs):
         for epoch in tqdm(range(1, arguments.n_epochs + 1)):
 
             # train and report training errror
-            train_loss.append(train(*random_batch(train_file, arguments.chunk_len, arguments.batch_size)))
+            train_loss_batches = [] 
+            for n, (inp, tar) in enumerate(train_loader):
+                if arguments.cuda:
+                    inp = inp.cuda()
+                    tar = tar.cuda()
+                train_loss_batch = train(Variable(inp), 
+                                         Variable(tar))
+                train_loss_batches.append(train_loss_batch)
+                print('Processing batch [{}]'.format(n))
+            train_loss.append(np.mean(train_loss_batches))
 
             # report test error
-            test_loss.append(test(*random_batch(test_file, arguments.chunk_len, arguments.batch_size)))
+            test_loss_batches = []
+            for n, (inp, tar) in enumerate(test_loader):
+                if arguments.cuda:
+                    inp = inp.cuda()
+                    tar = tar.cuda()
+                test_loss_batch = test(Variable(inp),
+                                       Variable(tar))
+                test_loss_batches.append(test_loss_batch)
+            test_loss.append(np.mean(test_loss_batches))
 
             if epoch % arguments.print_every == 0:
                 #print('[%s (%d %d%%)]' % (time_since(start), epoch, epoch / arguments.n_epochs * 100))
